@@ -1,0 +1,34 @@
+{
+  "name": "payerproof",
+  "version": "0.1.0",
+  "description": "Payerproof — on-chain trust scores for x402 services, paid per request in USDC on Base",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "snapshot": "tsx src/jobs/snapshot.ts",
+    "scan": "tsx src/jobs/scan.ts",
+    "report": "tsx src/jobs/report.ts",
+    "wallet": "tsx scripts/create-wallet.ts",
+    "test:buyer": "tsx scripts/test-buyer.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@coinbase/x402": "^2.1.0",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "viem": "^2.57.4",
+    "tsx": "^4.23.15",
+    "x402-express": "^1.2.0",
+    "x402-fetch": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.3"
+  }
+}

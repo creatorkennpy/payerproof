@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Payerproof — on-chain trust scores for the x402 Bazaar</title>
+<meta name="description" content="Payerproof is a pay-per-request API (USDC on Base, x402 protocol) that scores x402 services from verified on-chain revenue, payer diversity, liveness and listing age." />
+<style>
+  :root { --bg:#0b0e14; --card:#131824; --text:#e6e9f0; --muted:#8b93a7; --accent:#4f8cff; --ok:#3fb68b; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+  .wrap { max-width:880px; margin:0 auto; padding:48px 24px 96px; }
+  h1 { font-size:2rem; margin:0 0 8px; }
+  h2 { margin-top:48px; border-bottom:1px solid #222a3a; padding-bottom:8px; }
+  .sub { color:var(--muted); font-size:1.05rem; }
+  .badge { display:inline-block; background:#16324f; color:#9cc4ff; border-radius:6px; padding:2px 10px; font-size:.85rem; margin-right:8px; }
+  .card { background:var(--card); border:1px solid #222a3a; border-radius:12px; padding:20px 24px; margin:16px 0; }
+  .price { color:var(--ok); font-weight:700; font-family:var(--mono); }
+  code, pre { font-family:var(--mono); font-size:.9rem; }
+  code { background:#1b2232; padding:2px 6px; border-radius:4px; }
+  pre { background:#0e1320; border:1px solid #222a3a; border-radius:8px; padding:16px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #222a3a; font-size:.95rem; }
+  th { color:var(--muted); font-weight:600; }
+  a { color:var(--accent); }
+  .muted { color:var(--muted); font-size:.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Payerproof</h1>
+  <p class="sub">On-chain trust scores for x402 services. Before your agent spends USDC on an unknown Bazaar endpoint, ask Payerproof if the payers are real — verified against the Base blockchain, not self-reported counters.</p>
+  <p>
+    <span class="badge">x402 protocol</span>
+    <span class="badge">USDC on Base</span>
+    <span class="badge">No API key, no account</span>
+  </p>
+
+  <h2>Why</h2>
+  <p>The x402 Bazaar lists 30,000+ services. Their call counters are <strong>self-reported</strong>: analyses of top endpoints found counters implying hundreds of dollars per day while the chain showed a few dollars, and "popular" services where one wallet was 60%+ of all payments. Agents (and humans) picking services need an independent signal.</p>
+  <p>We compute it from data that cannot lie: USDC <code>Transfer</code> logs on Base mainnet, plus a live liveness probe and the service's history in our daily Bazaar snapshots.</p>
+
+  <h2>Endpoints</h2>
+
+  <div class="card">
+    <h3><code>GET /score</code> <span class="price">$0.02</span></h3>
+    <p>Trust score 0–100 (grade A–F) for any x402 service URL, with full component breakdown and flags such as <code>inflated_counter</code>, <code>self_dealing_suspected</code>, <code>dead_endpoint</code>, <code>new_listing</code>.</p>
+    <table>
+      <tr><th>Query param</th><th>Description</th></tr>
+      <tr><td><code>resource</code></td><td>Full URL of the x402 service (as listed in the Bazaar)</td></tr>
+      <tr><td><code>window</code></td><td>On-chain window in hours. Default 720 (30 days)</td></tr>
+    </table>
+    <pre>{
+  "resource": "https://api.example.com/paid",
+  "recipient": "0xabc...",
+  "score": 72, "grade": "B",
+  "components": {
+    "liveness":            { "points": 30, "max": 30 },
+    "payerDiversity":      { "points": 18, "max": 30, "uniquePayers": 14, "topPayerShare": 0.31 },
+    "revenueVerification": { "points": 18, "max": 25, "reportedCalls30d": 4100, "ratioEstimate": 0.4 },
+    "listingAge":          { "points": 8,  "max": 15, "daysTracked": 9.2 }
+  },
+  "flags": [],
+  "disclaimer": "Verifiable on-chain data and heuristics only. Not financial advice."
+}</pre>
+  </div>
+
+  <div class="card">
+    <h3><code>GET /revenue</code> <span class="price">$0.01</span></h3>
+    <p>Raw verified revenue stats for any seller address on Base: total USDC received, transfer count, unique payers, top-payer concentration, largest transfers — with the exact block range covered.</p>
+    <table>
+      <tr><th>Query param</th><th>Description</th></tr>
+      <tr><td><code>address</code></td><td>EVM address that receives the payments (<code>0x...</code>)</td></tr>
+      <tr><td><code>window</code></td><td>Window in hours. Default 24, max 720</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3><code>GET /ping</code> <span class="price" style="color:var(--muted)">free</span></h3>
+    <p>Integration check: service metadata, current paid routes and prices.</p>
+  </div>
+
+  <h2>How to pay (agents)</h2>
+  <p>Standard x402 flow — no account, no key. With <code>x402-fetch</code>:</p>
+  <pre>import { wrapFetchWithPayment } from "x402-fetch";
+import { createSigner } from "x402/types";
+
+const signer = await createSigner("base", process.env.PRIVATE_KEY);
+const payFetch = wrapFetchWithPayment(fetch, signer);
+
+const res = await payFetch(
+  "https://YOUR-DOMAIN/score?resource=" + encodeURIComponent(serviceUrl)
+);
+const verdict = await res.json();</pre>
+  <p class="muted">Any x402-compatible client works (TypeScript, Python, Go). First request returns HTTP 402 with payment requirements; the client signs a USDC authorization and retries.</p>
+
+  <h2>Methodology &amp; honesty</h2>
+  <ul>
+    <li>On-chain coverage is incremental and may be partial on first call — the response always includes the exact block range and <code>complete</code> flag.</li>
+    <li>We count USDC transfers into the seller address; price-matching transfers are used to estimate call counts. Wallets can receive USDC for unrelated reasons.</li>
+    <li>A high score is not an endorsement; a low score is not an accusation. We publish signals, you decide.</li>
+  </ul>
+</div>
+</body>
+</html>
