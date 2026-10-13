@@ -38,6 +38,7 @@ const logClients = config.baseRpcUrls.map((url) => ({
 
 class HistoryUnavailableError extends Error {}
 class AllRateLimitedError extends Error {}
+class EtherscanUnavailableError extends Error {}
 
 type GetLogsParams = {
   fromBlock: bigint;
@@ -229,7 +230,9 @@ async function scanViaEtherscan(
         page -= 1;
         continue;
       }
-      throw new Error(`Etherscan: ${body.message} ${String(body.result).slice(0, 120)}`);
+      throw new EtherscanUnavailableError(
+        `${body.message} ${String(body.result).slice(0, 160)}`,
+      );
     }
     const txs = body.result as EtherscanTokenTx[];
     for (const tx of txs) {
@@ -286,42 +289,50 @@ export async function ensureCoverage(
 
   const targetFrom = latestBlock - BigInt(Math.ceil(windowHours * BLOCKS_PER_HOUR));
   const state = getScanState(address);
-  const useEtherscan = config.etherscanApiKey !== "";
 
   let oldest: bigint;
   let newest: bigint;
   let note: string | undefined;
+  let source: Coverage["source"] = "rpc";
 
-  if (useEtherscan) {
-    // Caminho Etherscan: historico profundo em poucas requisicoes.
-    if (!state) {
-      oldest = await scanViaEtherscan(address, targetFrom, latestBlock);
-      newest = latestBlock;
-    } else {
-      oldest = BigInt(state.oldest_block);
-      newest = BigInt(state.newest_block);
-      if (newest < latestBlock) {
-        await scanViaEtherscan(address, newest + 1n, latestBlock);
+  if (config.etherscanApiKey) {
+    try {
+      if (!state) {
+        oldest = await scanViaEtherscan(address, targetFrom, latestBlock);
         newest = latestBlock;
+      } else {
+        oldest = BigInt(state.oldest_block);
+        newest = BigInt(state.newest_block);
+        if (newest < latestBlock) {
+          await scanViaEtherscan(address, newest + 1n, latestBlock);
+          newest = latestBlock;
+        }
+        if (oldest > targetFrom) {
+          oldest = await scanViaEtherscan(address, targetFrom, oldest - 1n);
+        }
       }
-      if (oldest > targetFrom) {
-        oldest = await scanViaEtherscan(address, targetFrom, oldest - 1n);
-      }
+      source = "etherscan";
+    } catch (err) {
+      // Plano gratuito do Etherscan nao cobre Base: cai no RPC em vez de falhar a consulta paga.
+      note =
+        err instanceof Error
+          ? `Etherscan indisponivel na Base (${err.message.slice(0, 80)}). Usando RPC publico.`
+          : "Etherscan indisponivel. Usando RPC publico.";
     }
-  } else {
-    // Caminho RPC gratuito: varre do presente para tras e para onde o historico
-    // acaba (nos gratuitos servem poucas horas de logs).
-    const budget = BigInt(Math.max(maxBlocks, 1000));
+  }
 
-    if (!state) {
+  if (source === "rpc") {
+    const budget = BigInt(Math.max(maxBlocks, 1000));
+    const existing = getScanState(address);
+
+    if (!existing) {
       const bound = targetFrom > latestBlock - budget ? targetFrom : latestBlock - budget;
       oldest = await scanDown(address, latestBlock, bound, latestBlock, latestTimestamp);
       newest = latestBlock;
     } else {
-      oldest = BigInt(state.oldest_block);
-      newest = BigInt(state.newest_block);
+      oldest = BigInt(existing.oldest_block);
+      newest = BigInt(existing.newest_block);
 
-      // 1) Frente: blocos novos desde a ultima varredura (do presente para tras).
       if (newest < latestBlock) {
         const covered = await scanDown(
           address,
@@ -330,12 +341,10 @@ export async function ensureCoverage(
           latestBlock,
           latestTimestamp,
         );
-        // Se nao alcancou newest+1 (gap), a faixa contigua recomeca em `covered`.
         if (covered > newest + 1n) oldest = covered;
         newest = latestBlock;
       }
 
-      // 2) Tras: estende em direcao ao inicio da janela pedida (dentro do possivel).
       if (oldest > targetFrom) {
         const bound = targetFrom > oldest - budget ? targetFrom : oldest - budget;
         const covered = await scanDown(address, oldest - 1n, bound, latestBlock, latestTimestamp);
@@ -343,24 +352,23 @@ export async function ensureCoverage(
       }
     }
 
-    if (oldest > targetFrom) {
+    if (oldest > targetFrom && !note) {
       note =
-        "RPCs gratuitos limitam o historico de logs a poucas horas; a cobertura cresce " +
-        "de forma incremental a cada chamada (cache). Configure ETHERSCAN_API_KEY " +
-        "(gratuita) ou um RPC archive para historico completo imediato.";
+        "RPCs publicos limitam o historico de logs a poucas horas; a cobertura cresce " +
+        "de forma incremental a cada chamada (cache).";
     }
   }
 
-  saveScanState(address, Number(oldest), Number(newest));
+  saveScanState(address, Number(oldest!), Number(newest!));
 
-  const effectiveFrom = oldest > targetFrom ? oldest : targetFrom;
+  const effectiveFrom = oldest! > targetFrom ? oldest! : targetFrom;
   const hoursCovered = Number(latestBlock - effectiveFrom) / BLOCKS_PER_HOUR;
   return {
     fromBlock: Number(effectiveFrom),
     toBlock: Number(latestBlock),
     hoursCovered: Math.round(hoursCovered * 10) / 10,
-    complete: oldest <= targetFrom,
-    source: useEtherscan ? "etherscan" : "rpc",
+    complete: oldest! <= targetFrom,
+    source,
     ...(note ? { note } : {}),
   };
 }
