@@ -40,6 +40,11 @@ export const config = {
 
   bazaarPageLimit: Number(env("BAZAAR_PAGE_LIMIT", "100")),
   bazaarMaxItems: Number(env("BAZAAR_MAX_ITEMS", "0")),
+
+  /** Snapshot diario no proprio processo da API (evita segundo servico no Railway). */
+  snapshotEnabled: env("SNAPSHOT_ENABLED", "true") !== "false",
+  /** Hora UTC do snapshot diario (0-23). Padrao: 3 = 00:00 em Brasilia. */
+  snapshotHourUtc: Number(env("SNAPSHOT_HOUR_UTC", "3")),
 };
 
 /** USDC na Base mainnet */

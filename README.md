@@ -57,10 +57,8 @@ O [Dockerfile](Dockerfile) usa Node 24 e sobe com `npm start`. O banco SQLite **
 1. Crie o serviço no Railway a partir deste repositório (builder Docker).
 2. Em **Volumes**, crie um volume e monte em `/data`.
 3. Variáveis: `NETWORK=base`, `PAY_TO`, `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`, `PUBLIC_BASE_URL` (a URL `https://....up.railway.app`), `ETHERSCAN_API_KEY`. Não defina `DB_PATH` — o Dockerfile já aponta para `/data`.
-4. Segundo serviço (cron), mesma imagem e **o mesmo volume** em `/data`:
-   - todo dia: `npm run snapshot`
-   - toda segunda: `npm run report`
-5. Health check: `GET /health`.
+4. Health check: `GET /health`.
+5. O snapshot do Bazaar roda **dentro da API** todo dia às 03:00 UTC. Não crie um segundo serviço de cron: o Railway não compartilha o volume entre dois serviços. Se o catálogo estiver vazio no boot, o snapshot sobe sozinho.
 
 Domínio próprio (`payerproof.xyz`, ~US$ 12/ano) pode esperar. A URL do Railway basta para o primeiro post. Os RPCs públicos já funcionam; um endpoint grátis da Alchemy no início de `BASE_RPC_URL` deixa a varredura mais estável.
 
@@ -75,7 +73,7 @@ src/
   onchain/usdc.ts      coletor de Transfer USDC na Base (chunks adaptativos, cache incremental)
   services/probe.ts    sonda de prova de vida (espera HTTP 402)
   services/score.ts    nota composta 0-100
-  jobs/                snapshot | scan | report (CLI)
+  jobs/                snapshot | scan | report (CLI) + schedule (cron interno da API)
 scripts/
   create-wallet.ts     gera carteira receptora
   test-buyer.ts        testa o fluxo de pagamento como comprador

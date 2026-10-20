@@ -9,6 +9,7 @@ import { config, assertMainnetReady } from "./config.js";
 import { getRevenueStats } from "./onchain/usdc.js";
 import { computeScore, findListing } from "./services/score.js";
 import { db } from "./db.js";
+import { startSnapshotScheduler } from "./jobs/schedule.js";
 
 assertMainnetReady();
 
@@ -159,4 +160,5 @@ app.listen(config.port, () => {
   if (config.network === "base" && !listed) {
     console.log("  dica: a listagem no Bazaar aparece apos as primeiras liquidacoes via facilitador CDP.");
   }
+  startSnapshotScheduler();
 });
